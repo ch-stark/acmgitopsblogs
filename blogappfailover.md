@@ -59,3 +59,124 @@ spec:
           type: BuiltIn
           builtIn: Steady              # <- Prefers to NOT move workloads
         weight: 3                      # <- Higher weight = more 'sticky'
+
+**What this means:**
+
+* **`numberOfClusters: 1`**: Ensures we only run on `on-prem` *or* `rosa`, never both (active-passive).
+* **`clusterSets`**: We focus our search on clusters within the `prod-clusters` set (you'd need to create this set and add your `on-prem` and `rosa` clusters to it).
+* **`tolerations`**: We give RHACM a 60-second grace period before reacting to a cluster becoming unreachable. This avoids failing over due to a minor network hiccup.
+* **`prioritizerPolicy`**: This is the critical part:
+    * We use two prioritizers: Our `clusterScore` (to define primary/secondary) and `Steady` (to control fail*back*).
+    * `Steady` has a **higher weight (3)** than `clusterScore` (1). This means RHACM will try hard *not* to move the application once placed. If it fails over to `rosa`, it will *stay* on `rosa` even if `on-prem` recovers. **If you wanted automatic failback, you'd give `clusterScore` the higher weight.**
+
+Apply it:
+
+```bash
+$ oc apply -f rocketchat-placement.yaml
+
+
+
+Step 2: Assigning Priority Scores (AddOnPlacementScore)
+The Placement needs scores to know which cluster we prefer. We create AddOnPlacementScore resources (one per cluster namespace on the hub) and then patch them with our desired values.
+
+Create the resources:
+
+YAML
+
+# cluster-scores.yaml
+apiVersion: cluster.open-cluster-management.io/v1alpha1
+kind: AddOnPlacementScore
+metadata:
+  name: cluster-score
+  namespace: on-prem # <- Namespace for your on-prem cluster
+---
+apiVersion: cluster.open-cluster-management.io/v1alpha1
+kind: AddOnPlacementScore
+metadata:
+  name: cluster-score
+  namespace: rosa   # <- Namespace for your ROSA cluster
+Bash
+
+$ oc apply -f cluster-scores.yaml
+Now, set the scores – high for primary (99), low for secondary (1):
+
+Bash
+
+# Primary Cluster (High Score)
+$ oc patch addonplacementscore cluster-score --namespace on-prem \
+  --subresource=status --type=merge -p \
+  '{"status":{"scores":[{"name":"clusterScore","value":99}]}}'
+
+# Secondary Cluster (Low Score)
+$ oc patch addonplacementscore cluster-score --namespace rosa \
+  --subresource=status --type=merge -p \
+  '{"status":{"scores":[{"name":"clusterScore","value":1}]}}'
+Now, RHACM knows on-prem is our first choice.
+
+Step 3: Deploying with GitOps (ApplicationSet)
+Finally, we use an ApplicationSet to link our Git repository (containing the RocketChat manifests) to the Placement decision.
+
+YAML
+
+# rocketchat-appset.yaml
+kind: ApplicationSet
+metadata:
+  name: rocketchat
+  namespace: openshift-gitops
+spec:
+  generators:
+    - clusterDecisionResource:
+        configMapRef: acm-placement # Default ACM integration point
+        labelSelector:
+          matchLabels:
+            # --- This is the MAGIC LINK! ---
+            cluster.open-cluster-management.io/placement: rocketchat-placement
+        requeueAfterSeconds: 30 # Check for placement changes every 30s
+  template: # <- Standard Argo CD Application definition
+    metadata:
+      name: rocketchat-{{name}} # {{name}} comes from the generator (cluster name)
+      labels:
+        velero.io/exclude-from-backup: "true"
+    spec:
+      destination:
+        namespace: default
+        server: "{{server}}" # {{server}} comes from the generator (API URL)
+      project: default
+      sources:
+        - path: rocketchat
+          repoURL: https://github.com/levenhagen/rocketchat-acm.git
+          targetRevision: main
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+The Key: The clusterDecisionResource generator watches our rocketchat-placement. It sees which cluster RHACM picked and uses its name ({{name}}) and server URL ({{server}}) to create an Argo CD Application targeted at that specific cluster.
+
+Apply it:
+
+Bash
+
+$ oc apply -f rocketchat-appset.yaml
+Watching the Failover in Action 🚀
+Initial State: Argo CD will deploy RocketChat to the on-prem cluster because it has the highest score (99).
+Failure: Imagine the on-prem cluster goes offline.
+Detection: After 60 seconds (our tolerationSeconds), RHACM marks on-prem as unavailable.
+Re-evaluation: RHACM re-runs the Placement logic. on-prem is out. The next best (and only) option is rosa (score 1).
+Decision Change: The Placement now decides on rosa.
+Argo CD Reacts: Within 30 seconds (requeueAfterSeconds), the ApplicationSet generator sees the change. It creates (or updates) an Argo CD Application for rocketchat-rosa.
+Deployment: Argo CD deploys RocketChat to the rosa cluster.
+Your application is now running on the secondary cluster, all without manual intervention! You can monitor this entire process through the RHACM console's application topology view or the OpenShift GitOps dashboard.
+
+Why This Matters
+This approach provides a robust, automated, and GitOps-native way to handle application high availability and disaster recovery. By leveraging RHACM's intelligent placement and Argo CD's declarative deployments, you can:
+
+Increase application resilience across hybrid environments.
+Reduce manual effort and human error during outages.
+Implement complex HA strategies (like active-passive, active-active, or score-based distribution) with declarative YAML.
+Maintain a clear audit trail through Git and Kubernetes resources.
+Combining these powerful tools allows you to build sophisticated, self-healing application infrastructures, ready to withstand the challenges of modern distributed systems.
+
+
