@@ -16,8 +16,6 @@ To achieve this automated failover, we rely on a few key Kubernetes resources, w
 2.  **`AddOnPlacementScore`**: Another RHACM custom resource. It lets us assign specific scores to our clusters, giving us fine-grained control over the `Placement` resource's preferences – essential for defining primary and secondary roles.
 3.  **`ApplicationSet`**: An Argo CD custom resource. We use its `clusterDecisionResource` generator, which cleverly *listens* to the decisions made by an RHACM `Placement` resource. When the `Placement` decision changes (e.g., during a failover), the `ApplicationSet` automatically generates or updates the Argo CD `Application` to deploy to the *newly selected* cluster.
 
-Essentially, **RHACM decides**, and **Argo CD acts**.
-
 ---
 
 ### Step 1: Defining the Failover Logic (`Placement`)
