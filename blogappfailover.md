@@ -59,6 +59,7 @@ spec:
           type: BuiltIn
           builtIn: Steady              # <- Prefers to NOT move workloads
         weight: 3                      # <- Higher weight = more 'sticky'
+```
 
 **What this means:**
 
@@ -73,7 +74,7 @@ Apply it:
 
 ```bash
 $ oc apply -f rocketchat-placement.yaml
-
+```
 
 
 Step 2: Assigning Priority Scores (AddOnPlacementScore)
@@ -81,8 +82,7 @@ The Placement needs scores to know which cluster we prefer. We create AddOnPlace
 
 Create the resources:
 
-YAML
-
+```
 # cluster-scores.yaml
 apiVersion: cluster.open-cluster-management.io/v1alpha1
 kind: AddOnPlacementScore
@@ -95,29 +95,35 @@ kind: AddOnPlacementScore
 metadata:
   name: cluster-score
   namespace: rosa   # <- Namespace for your ROSA cluster
-Bash
+```
 
+```
 $ oc apply -f cluster-scores.yaml
+```
+
 Now, set the scores – high for primary (99), low for secondary (1):
 
-Bash
 
 # Primary Cluster (High Score)
+```
 $ oc patch addonplacementscore cluster-score --namespace on-prem \
   --subresource=status --type=merge -p \
   '{"status":{"scores":[{"name":"clusterScore","value":99}]}}'
-
+```
 # Secondary Cluster (Low Score)
+
+```
 $ oc patch addonplacementscore cluster-score --namespace rosa \
   --subresource=status --type=merge -p \
   '{"status":{"scores":[{"name":"clusterScore","value":1}]}}'
+```
+
 Now, RHACM knows on-prem is our first choice.
 
 Step 3: Deploying with GitOps (ApplicationSet)
 Finally, we use an ApplicationSet to link our Git repository (containing the RocketChat manifests) to the Placement decision.
 
-YAML
-
+```
 # rocketchat-appset.yaml
 kind: ApplicationSet
 metadata:
@@ -153,13 +159,14 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - PruneLast=true
+```
+
 The Key: The clusterDecisionResource generator watches our rocketchat-placement. It sees which cluster RHACM picked and uses its name ({{name}}) and server URL ({{server}}) to create an Argo CD Application targeted at that specific cluster.
 
-Apply it:
-
-Bash
-
+```
 $ oc apply -f rocketchat-appset.yaml
+```
+
 Watching the Failover in Action 🚀
 Initial State: Argo CD will deploy RocketChat to the on-prem cluster because it has the highest score (99).
 Failure: Imagine the on-prem cluster goes offline.
