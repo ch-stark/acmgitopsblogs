@@ -100,7 +100,7 @@ metadata:
 $ oc apply -f cluster-scores.yaml
 ```
 
-Now, set the scores – high for primary (99), low for secondary (1):
+Now, set the scores – **high for primary (99)**, **low for secondary (1)**:
 
 
 ## Primary Cluster (High Score)
