@@ -77,7 +77,8 @@ $ oc apply -f rocketchat-placement.yaml
 ```
 
 
-Step 2: Assigning Priority Scores (AddOnPlacementScore)
+### Step 2: Assigning Priority Scores (AddOnPlacementScore)
+
 The Placement needs scores to know which cluster we prefer. We create AddOnPlacementScore resources (one per cluster namespace on the hub) and then patch them with our desired values.
 
 Create the resources:
@@ -104,14 +105,14 @@ $ oc apply -f cluster-scores.yaml
 Now, set the scores – high for primary (99), low for secondary (1):
 
 
-# Primary Cluster (High Score)
+## Primary Cluster (High Score)
 ```
 $ oc patch addonplacementscore cluster-score --namespace on-prem \
   --subresource=status --type=merge -p \
   '{"status":{"scores":[{"name":"clusterScore","value":99}]}}'
 ```
-# Secondary Cluster (Low Score)
 
+## Secondary Cluster (Low Score)
 ```
 $ oc patch addonplacementscore cluster-score --namespace rosa \
   --subresource=status --type=merge -p \
@@ -120,7 +121,8 @@ $ oc patch addonplacementscore cluster-score --namespace rosa \
 
 Now, RHACM knows on-prem is our first choice.
 
-Step 3: Deploying with GitOps (ApplicationSet)
+### Step 3: Deploying with GitOps (ApplicationSet)
+
 Finally, we use an ApplicationSet to link our Git repository (containing the RocketChat manifests) to the Placement decision.
 
 ```
@@ -161,7 +163,7 @@ spec:
           - PruneLast=true
 ```
 
-The Key: The clusterDecisionResource generator watches our rocketchat-placement. It sees which cluster RHACM picked and uses its name ({{name}}) and server URL ({{server}}) to create an Argo CD Application targeted at that specific cluster.
+**The Key**: The clusterDecisionResource generator watches our rocketchat-placement. It sees which cluster RHACM picked and uses its name ({{name}}) and server URL ({{server}}) to create an Argo CD Application targeted at that specific cluster.
 
 ```
 $ oc apply -f rocketchat-appset.yaml
