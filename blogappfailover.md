@@ -167,23 +167,29 @@ The Key: The clusterDecisionResource generator watches our rocketchat-placement.
 $ oc apply -f rocketchat-appset.yaml
 ```
 
-Watching the Failover in Action 🚀
-Initial State: Argo CD will deploy RocketChat to the on-prem cluster because it has the highest score (99).
-Failure: Imagine the on-prem cluster goes offline.
-Detection: After 60 seconds (our tolerationSeconds), RHACM marks on-prem as unavailable.
-Re-evaluation: RHACM re-runs the Placement logic. on-prem is out. The next best (and only) option is rosa (score 1).
-Decision Change: The Placement now decides on rosa.
-Argo CD Reacts: Within 30 seconds (requeueAfterSeconds), the ApplicationSet generator sees the change. It creates (or updates) an Argo CD Application for rocketchat-rosa.
-Deployment: Argo CD deploys RocketChat to the rosa cluster.
+### Watching the Failover in Action 🚀
+
+1.  **Initial State:** Argo CD will deploy RocketChat to the `on-prem` cluster because it has the highest score (99).
+2.  **Failure:** Imagine the `on-prem` cluster goes offline.
+3.  **Detection:** After 60 seconds (our `tolerationSeconds`), RHACM marks `on-prem` as unavailable.
+4.  **Re-evaluation:** RHACM re-runs the `Placement` logic. `on-prem` is out. The next best (and only) option is `rosa` (score 1).
+5.  **Decision Change:** The `Placement` now decides on `rosa`.
+6.  **Argo CD Reacts:** Within 30 seconds (`requeueAfterSeconds`), the `ApplicationSet` generator sees the change. It creates (or updates) an Argo CD `Application` for `rocketchat-rosa`.
+7.  **Deployment:** Argo CD deploys RocketChat to the `rosa` cluster.
+
 Your application is now running on the secondary cluster, all without manual intervention! You can monitor this entire process through the RHACM console's application topology view or the OpenShift GitOps dashboard.
 
-Why This Matters
-This approach provides a robust, automated, and GitOps-native way to handle application high availability and disaster recovery. By leveraging RHACM's intelligent placement and Argo CD's declarative deployments, you can:
+---
 
-Increase application resilience across hybrid environments.
-Reduce manual effort and human error during outages.
-Implement complex HA strategies (like active-passive, active-active, or score-based distribution) with declarative YAML.
-Maintain a clear audit trail through Git and Kubernetes resources.
+### Why This Matters
+
+This approach provides a robust, **automated**, and **GitOps-native** way to handle application high availability and disaster recovery. By leveraging RHACM's intelligent placement and Argo CD's declarative deployments, you can:
+
+* **Increase application resilience** across hybrid environments.
+* **Reduce manual effort and human error** during outages.
+* **Implement complex HA strategies** (like active-passive, active-active, or score-based distribution) with declarative YAML.
+* **Maintain a clear audit trail** through Git and Kubernetes resources.
+
 Combining these powerful tools allows you to build sophisticated, self-healing application infrastructures, ready to withstand the challenges of modern distributed systems.
 
 
