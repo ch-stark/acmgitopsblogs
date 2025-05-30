@@ -103,14 +103,14 @@ $ oc apply -f cluster-scores.yaml
 Now, set the scores – **high for primary (99)**, **low for secondary (1)**:
 
 
-## Primary Cluster (High Score)
+### Primary Cluster (High Score)
 ```
 $ oc patch addonplacementscore cluster-score --namespace on-prem \
   --subresource=status --type=merge -p \
   '{"status":{"scores":[{"name":"clusterScore","value":99}]}}'
 ```
 
-## Secondary Cluster (Low Score)
+### Secondary Cluster (Low Score)
 ```
 $ oc patch addonplacementscore cluster-score --namespace rosa \
   --subresource=status --type=merge -p \
