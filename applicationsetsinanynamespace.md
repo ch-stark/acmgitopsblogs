@@ -1,76 +1,66 @@
----
+The Goal: A Multi-Tenant Hub for Team-Managed Deployments
+The primary goal of this tutorial is to construct a true multi-tenant GitOps Hub using RHACM. In this model, different teams (devteam1, devteam2, appadmin) are empowered to manage their own application deployments through their own ApplicationSet resources, which live in their dedicated namespaces on the Hub cluster.
 
-### Prerequisites
+This architecture provides superior isolation and autonomy compared to a single, central ApplicationSet.
 
-* A **Red Hat Advanced Cluster Management (RHACM)** Hub Cluster (v2.4+ recommended).
-* One or more **Managed Clusters** imported into RHACM and in a `Ready` state.
-* The **OpenShift GitOps operator** installed on the **Hub Cluster** (typically in `openshift-gitops`).
-* A **Git repository** accessible by Argo CD instances on both Hub and Managed Clusters.
-* `oc` (OpenShift CLI) configured to access your Hub Cluster.
-* Cluster-admin privileges on the Hub Cluster for initial setup and policy creation.
+Here is the workflow we will build:
 
----
+Team-Scoped ApplicationSets: Each team will have an ApplicationSet defined in their own namespace on the Hub (e.g., devteam1/appset-devteam1). This ApplicationSet is responsible only for that team's applications.
+Automated Application Generation: The team's ApplicationSet will automatically generate Application resources for each managed cluster. Crucially, these Application resources will be created in the same namespace as the ApplicationSet (e.g., devteam1/app-for-cluster-1).
+Pull-Model Propagation: These Application resources on the Hub will be annotated for the RHACM pull model. RHACM will then propagate their definitions to the managed clusters via ManifestWork.
+Managed Cluster Execution: A single, multi-tenant OpenShift GitOps instance (installed by the gitops-addon) on each managed cluster will reconcile all the incoming Application definitions, deploying each team's workloads into the correct corresponding namespaces (devteam1, devteam2, appadmin).
+This tutorial will guide you through setting up this entire advanced, multi-tenant workflow from start to finish.
 
-### Step 1: Configure the Hub Cluster
+Prerequisites
+Red Hat Advanced Cluster Management (RHACM) Hub Cluster (v2.8+ recommended for this feature).
+OpenShift GitOps operator installed on the Hub Cluster (v2.8+ recommended).
+One or more Managed Clusters imported into RHACM.
+A Git repository accessible by Argo CD.
+oc (OpenShift CLI) configured to access your Hub Cluster.
+Cluster-admin privileges on the Hub Cluster.
+Step 1: Configure the Hub Cluster for Multi-Tenant ApplicationSets
+This is the most critical setup step. We must configure the Hub's Argo CD to allow both Application and ApplicationSet resources to be managed in team-specific namespaces.
 
-First, we will prepare the RHACM Hub Cluster by configuring its local Argo CD instance and creating the necessary project and placement resources.
+Enable "Application" and "ApplicationSet" in Any Namespace:
+Patch the argocd-cmd-params-cm ConfigMap to tell the Argo CD controllers which namespaces to watch. The applicationset.namespaces key enables the feature for ApplicationSets.
 
-#### 1.1. Enable "Applications in any Namespace" on the Hub
+Bash
 
-This allows the Hub's Argo CD to manage `Application` resources in namespaces beyond the default `openshift-gitops`, which is essential for our multi-team setup.
+oc patch configmap argocd-cmd-params-cm -n openshift-gitops --type merge -p \
+'{"data":{
+  "application.namespaces":"openshift-gitops,devteam1,devteam2,appadmin",
+  "applicationset.namespaces":"openshift-gitops,devteam1,devteam2,appadmin"
+}}'
+Restart Argo CD Components:
+Apply the changes by restarting the controllers.
 
-1.  **Define Allowed Namespaces:**
-    ```bash
-    oc patch configmap argocd-cmd-params-cm -n openshift-gitops --type merge -p \
-    '{"data":{"application.namespaces":"openshift-gitops,devteam1,devteam2,appadmin"}}'
-    ```
+Bash
 
-2.  **Restart Argo CD Components:**
-    ```bash
-    oc rollout restart deployment/openshift-gitops-server -n openshift-gitops
-    oc rollout restart statefulset/openshift-gitops-application-controller -n openshift-gitops
-    ```
+oc rollout restart deployment/openshift-gitops-server -n openshift-gitops
+oc rollout restart statefulset/openshift-gitops-application-controller -n openshift-gitops
+oc rollout restart deployment/openshift-gitops-applicationset-controller -n openshift-gitops
+Create Team Namespaces on the Hub:
+These namespaces will contain the ApplicationSet and generated Application resources.
 
-3.  **Adapt RBAC for Argo CD Server:**
-    This allows the Argo CD UI/CLI on the Hub to see the `Application` resources in the new namespaces. Create `argocd-server-any-ns-rbac.yaml`:
-    ```yaml
-    apiVersion: rbac.authorization.k8s.io/v1
-    kind: ClusterRole
-    metadata:
-      name: argocd-server-view-apps-any-ns
-    rules:
-    - apiGroups: ["argoproj.io"]
-      resources: ["applications"]
-      verbs: ["get", "list", "watch"]
-    ---
-    apiVersion: rbac.authorization.k8s.io/v1
-    kind: ClusterRoleBinding
-    metadata:
-      name: argocd-server-view-apps-any-ns
-    roleRef:
-      apiGroup: rbac.authorization.k8s.io
-      kind: ClusterRole
-      name: argocd-server-view-apps-any-ns
-    subjects:
-    - kind: ServiceAccount
-      name: openshift-gitops-argocd-server
-      namespace: openshift-gitops
-    ```
-    Apply it: `oc apply -f argocd-server-any-ns-rbac.yaml`
+Bash
 
-#### 1.2. Create the Argo CD `AppProject`
+oc create ns devteam1
+oc create ns devteam2
+oc create ns appadmin
+Create the Shared AppProject:
+The AppProject must list the team namespaces in sourceNamespaces. This acts as a security gate, permitting Application resources created in these namespaces to be associated with this project.
 
-The `AppProject` defines the permissions for our generated applications, including which source repositories they can use and which namespaces they are allowed to be created in.
+Create appproject-teams.yaml:
 
-Create `appproject-teams.yaml`:
-```yaml
+YAML
+
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: team-applications
+  name: shared-team-projects
   namespace: openshift-gitops
 spec:
-  description: Project for applications deployed to team and admin namespaces
+  description: Shared project for all team-managed applications
   sourceRepos:
   - '*' # Or restrict to your specific Git repository URL
   destinations:
@@ -79,36 +69,18 @@ spec:
   clusterResourceWhitelist:
   - group: '*'
     kind: '*'
-  # This is crucial: it allows Application CRs to be created in these namespaces on the Hub
+  # This allows Application CRs from these namespaces to use this project
   sourceNamespaces:
-  - openshift-gitops
   - devteam1
   - devteam2
   - appadmin
-Apply it: oc apply -f appproject-teams.yaml -n openshift-gitops
-
-1.3. Create the Placement for the ApplicationSet
-This Placement resource will be used by our ApplicationSet to dynamically discover which managed clusters to target for deployments.
-
-Create placement-appset-targets.yaml:
-
-YAML
-
-apiVersion: cluster.open-cluster-management.io/v1beta1
-kind: Placement
-metadata:
-  name: appset-target-all-managed
-  namespace: openshift-gitops # The ApplicationSet will reference this Placement
-spec:
-  clusterSets:
-    - global # This example targets all clusters in the 'global' ClusterSet
-Apply it: oc apply -f placement-appset-targets.yaml -n openshift-gitops
+Apply it: oc apply -f appproject-teams.yaml
 
 Step 2: Prepare Managed Clusters with the gitops-addon
-Next, we will prepare our managed clusters by deploying the OpenShift GitOps Operator and an Argo CD instance. We will use the modern, all-in-one gitops-addon, which handles this entire process automatically.
+We will use the gitops-addon to automatically install a single, shared OpenShift GitOps instance on each managed cluster. This single instance is capable of managing deployments into multiple different namespaces.
 
 Create the ClusterManagementAddOn Resource:
-This resource makes the gitops-addon available across the fleet. Create cma-gitops-addon.yaml:
+This makes the gitops-addon available for installation. Create cma-gitops-addon.yaml:
 
 YAML
 
@@ -117,16 +89,13 @@ kind: ClusterManagementAddOn
 metadata:
   name: gitops-addon
 spec:
-  addOnMeta:
-    displayName: GitOps Addon
-    description: Installs and configures OpenShift GitOps for the pull model.
   installStrategy:
     type: Placements
     placements:
-    - name: placement-enable-gitops-addon # The Placement we will create next
-      namespace: open-cluster-management # A common namespace for shared placements
+    - name: placement-enable-gitops-addon
+      namespace: open-cluster-management
 Create the Placement for the Addon:
-This Placement selects the clusters where the gitops-addon will be enabled. Create placement-addons.yaml:
+This Placement selects all managed clusters to install the addon on. Create placement-addons.yaml:
 
 YAML
 
@@ -144,203 +113,140 @@ Bash
 
 oc apply -f cma-gitops-addon.yaml
 oc apply -f placement-addons.yaml
-RHACM will now automatically install a pull-model-ready OpenShift GitOps instance on every cluster matched by the Placement.
+Step 3: Define Team-Specific ApplicationSets and Apps in Git
+Your Git repository will now contain the definitions for each team's ApplicationSet as well as their application manifests.
 
-Step 3: Define Applications and Targeting in Git
-(This step is unchanged. Ensure your Git repo has this structure and content.)
+Recommended Git Structure:
 
-├── common-apps
-│   ├── devteam1-app
-│   │   ├── deployment.yaml
-│   │   └── params.json
-│   ├── devteam2-app
-│   │   ├── deployment.yaml
-│   │   └── params.json
-│   └── appadmin-tool
-│       ├── deployment.yaml
-│       └── params.json
+├── appsets/
+│   ├── devteam1-appset.yaml
+│   ├── devteam2-appset.yaml
+│   └── appadmin-appset.yaml
+│
+└── apps/
+    ├── devteam1-app/
+    │   └── deployment.yaml
+    ├── devteam2-app/
+    │   └── deployment.yaml
+    └── appadmin-tool/
+        └── deployment.yaml
 File Contents:
 
-common-apps/devteam1-app/params.json:
-JSON
-
-{
-  "hub_app_namespace": "devteam1",
-  "managed_cluster_deploy_namespace": "devteam1",
-  "app_name_suffix": "dt1"
-}
-common-apps/devteam1-app/deployment.yaml:
-YAML
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hello-app-devteam1
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hello-devteam1
-  template:
-    metadata:
-      labels:
-        app: hello-devteam1
-    spec:
-      containers:
-      - name: hello-openshift
-        image: openshift/hello-openshift
-common-apps/devteam2-app/params.json:
-JSON
-
-{
-  "hub_app_namespace": "devteam2",
-  "managed_cluster_deploy_namespace": "devteam2",
-  "app_name_suffix": "dt2"
-}
-common-apps/devteam2-app/deployment.yaml:
-YAML
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hello-app-devteam2
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hello-devteam2
-  template:
-    metadata:
-      labels:
-        app: hello-devteam2
-    spec:
-      containers:
-      - name: hello-world
-        image: gcr.io/google-samples/hello-app:1.0
-common-apps/appadmin-tool/params.json:
-JSON
-
-{
-  "hub_app_namespace": "appadmin",
-  "managed_cluster_deploy_namespace": "appadmin",
-  "app_name_suffix": "adm"
-}
-common-apps/appadmin-tool/deployment.yaml:
-YAML
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: admin-tool-deployment
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: admin-tool
-  template:
-    metadata:
-      labels:
-        app: admin-tool
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-Commit and push this structure to your Git repository.
-
-Step 4: Create the Master Pull-Model ApplicationSet on the Hub
-This ApplicationSet is the engine of our workflow. It reads our Git repository, discovers the applications and their target namespaces, finds the managed clusters from our Placement, and generates the Application CRs on the Hub with the correct annotations for the pull model.
-
-Create master-appset-pull-model.yaml. Remember to replace <YOUR_GIT_REPO_URL>.
+appsets/devteam1-appset.yaml:
+Note that metadata.namespace is set to devteam1. The generated Application will also be in this namespace.
 
 YAML
 
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: multi-namespace-pull-set
-  namespace: openshift-gitops
+  name: devteam1-appset
+  namespace: devteam1 # <-- This AppSet lives in the team's namespace
 spec:
   generators:
-  - matrix:
-      generators:
-        - clusterDecisionResource: # Uses RHACM Placement
-            configMapRef: acm-placement
-            name: appset-target-all-managed # Our Placement for AppSet
-            requeueAfterSeconds: 180
-        - git: # Gets app configs
-            repoURL: <YOUR_GIT_REPO_URL> # !!! REPLACE THIS !!!
-            revision: main
-            files:
-            - path: "common-apps/**/params.json"
+  - clusterDecisionResource:
+      configMapRef: acm-placement
+      name: appset-target-all-managed # A shared Placement defined on the Hub
+      requeueAfterSeconds: 180
   template:
-    # This Application CR is created on the HUB
     metadata:
-      name: '{{path.basename}}-{{values.app_name_suffix}}-{{name}}'
-      namespace: '{{values.hub_app_namespace}}' # CRUCIAL: Creates App CR in devteam1, etc. on Hub
-      labels:
-        team: '{{values.managed_cluster_deploy_namespace}}'
-        rhacm-appset-pull-model: "true"
-      # Annotations for RHACM Pull Model:
+      name: 'devteam1-app-{{name}}'
+      namespace: devteam1 # <-- Generated app is also in the team's namespace
       annotations:
-        # Tells Hub Argo CD to NOT reconcile this Application CR directly
         argocd.argoproj.io/skip-reconcile: "true"
-        # Identifies the target managed cluster for RHACM
         apps.open-cluster-management.io/ocm-managed-cluster: '{{name}}'
-        # Explicitly enables pull model processing by RHACM
         apps.open-cluster-management.io/pull-to-ocm-managed-cluster: "true"
     spec:
-      project: team-applications
+      project: shared-team-projects
       source:
-        repoURL: <YOUR_GIT_REPO_URL> # !!! REPLACE THIS !!!
+        repoURL: <YOUR_GIT_REPO_URL>
         targetRevision: main
-        path: '{{path}}'
-      # Destination for the PULL MODEL Application CR on the managed cluster
+        path: apps/devteam1-app
       destination:
-        server: [https://kubernetes.default.svc](https://kubernetes.default.svc) # Standard for local cluster reconciliation
-        namespace: '{{values.managed_cluster_deploy_namespace}}'
+        server: https://kubernetes.default.svc
+        namespace: devteam1
       syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-        - CreateNamespace=true
-Apply it: oc apply -f master-appset-pull-model.yaml -n openshift-gitops
+        automated: { prune: true, selfHeal: true }
+        syncOptions: [CreateNamespace=true]
+Create similar devteam2-appset.yaml and appadmin-appset.yaml files, changing the metadata.name, metadata.namespace, and template.metadata.namespace, template.spec.source.path, and template.spec.destination.namespace fields accordingly for devteam2 and appadmin.
+
+The deployment.yaml files inside the apps/ directory can be the same simple examples from the previous tutorial.
+
+Step 4: Bootstrap the Team ApplicationSets with an "App of AppSets"
+To get the team ApplicationSets from Git onto the Hub, we use a single bootstrap application, often called an "App of AppSets".
+
+Create a Shared Placement for the ApplicationSet Generator:
+All the team ApplicationSets can share a single Placement resource to discover clusters. This Placement must exist on the Hub before the ApplicationSets are synced.
+
+Create placement-appset-generator-target.yaml:
+
+YAML
+
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: appset-target-all-managed
+  namespace: openshift-gitops # Place in a central, known location
+spec:
+  clusterSets:
+    - global
+Apply it: oc apply -f placement-appset-generator-target.yaml
+
+Create the Bootstrap Application:
+This Application lives in openshift-gitops and its only job is to sync the contents of the appsets/ directory from your Git repository.
+
+Create bootstrap-app-of-appsets.yaml:
+
+YAML
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-appsets
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: <YOUR_GIT_REPO_URL> # !!! REPLACE THIS !!!
+    targetRevision: main
+    path: appsets # This points to the directory containing all your AppSet YAMLs
+  destination:
+    server: https://kubernetes.default.svc # Deploys to the Hub itself
+    namespace: default # The namespace here doesn't matter, as the AppSets have their own target namespaces
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+Apply it: oc apply -f bootstrap-app-of-appsets.yaml
 
 Step 5: Verification
 On the Hub Cluster:
 
-Check Addon Status: Verify that the gitops-addon was successfully enabled for your managed clusters.
+Check Bootstrap App: In the openshift-gitops Argo CD UI, ensure the app-of-appsets application is Synced and Healthy.
+Check ApplicationSets: Verify that the team ApplicationSets have been created in their respective namespaces.
 Bash
 
-# Replace 'cluster1' with your managed cluster's namespace on the hub
-oc get managedclusteraddon gitops-addon -n cluster1 -o yaml
-Look for a condition with type: Available and status: "True".
-Check Generated Application CRs: Confirm that the Application resources were created in the correct team namespaces on the Hub.
+oc get applicationset -n devteam1
+oc get applicationset -n devteam2
+oc get applicationset -n appadmin
+Check Generated Applications: Verify that each ApplicationSet has generated Application CRs.
 Bash
 
-oc get applications -n devteam1
-oc get applications -n devteam2
-oc get applications -n appadmin
-Check ManifestWork: Verify that RHACM has created ManifestWork to transport the Application definitions to the managed clusters.
+oc get application -n devteam1
+oc get application -n devteam2
+Check ManifestWork: Confirm that ManifestWork has been created to transport the Application definitions.
 Bash
 
 # Replace <managed_cluster_hub_namespace> e.g., cluster1
-oc get manifestwork -n <managed_cluster_hub_namespace> -l rhacm-appset-pull-model=true
+oc get manifestwork -n <managed_cluster_hub_namespace>
 On the Managed Clusters:
 
-Check GitOps Installation: Switch your oc context to a managed cluster. Verify that the gitops-addon successfully installed OpenShift GitOps.
+Check GitOps Installation: Switch oc context to a managed cluster. Verify the single, shared GitOps instance is running.
 Bash
 
-# Check for the addon controller pod
-oc get pods -n open-cluster-management-agent-addon | grep gitops-addon
-
-# Check for the GitOps Operator pods
 oc get pods -n openshift-gitops
-You should see the argocd-application-controller, argocd-repo-server, and argocd-redis pods running.
-Check Deployed Applications: Finally, verify that your sample applications are running in their designated namespaces.
+Check Deployed Applications: Verify that the workloads from all teams are running in their correct namespaces.
 Bash
 
-oc get pods -n devteam1
-oc get pods -n devteam2
-oc get pods -n appadmin
-You should see the hello-app-devteam1-*, hello-app-devteam2-*, and admin-tool-deployment-* pods running successfully.
+oc get pods --all-namespaces | grep -E "devteam1|devteam2|appadmin"
+You should see pods from all three applications running in their respective namespaces on each managed cluster, all reconciled by the single GitOps instance.
