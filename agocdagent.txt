@@ -1,9 +1,10 @@
-Supercharge Your GitOps: Managing the argocd-agent with Red Hat Advanced Cluster Management
+# Supercharge Your GitOps: Managing the argocd-agent with Red Hat Advanced Cluster Management
+
 Red Hat Advanced Cluster Management (ACM) for Kubernetes provides a powerful, single control plane to orchestrate and manage multiple Kubernetes clusters. Built on the foundation of the open-source project Open Cluster Management (OCM), ACM excels at simplifying complex multi-cluster and multicloud deployments.
 
 A key feature of ACM is its extensible add-on framework, which allows you to seamlessly integrate and manage essential tools across your entire fleet. One such powerful integration is the argocd-agent, which can be installed and managed as an ACM add-on, bringing the power of Argo CD's GitOps capabilities under the centralized governance of Red Hat ACM.
 
-Benefits of Using the ACM argocd-agent Add-On
+## Benefits of Using the ACM argocd-agent Add-On
 Integrating the argocd-agent via the ACM add-on framework offers significant advantages for platform engineering and operations teams.
 
 🎯 Centralized Deployment
@@ -24,14 +25,14 @@ Security is paramount. The ACM add-on framework can leverage a CustomSigner regi
 ⚙️ Flexible Configuration
 Customize the argocd-agent deployment to meet your specific needs using the ACM AddOnTemplate. This powerful feature enables you to apply custom, template-based modifications to the agent's configuration and Kubernetes manifests, ensuring it fits perfectly within your environment's requirements.
 
-Architecture
+## Architecture
 The architecture for managing the argocd-agent with ACM is streamlined and declarative, relying on a few key Kubernetes-native resources on the hub cluster. The diagram below shows a simplified overview of this architecture with one managed cluster connected to the ACM hub.
 
-ClusterManagementAddOn: The central pillar for add-on registration. This hub-level resource formally introduces the argocd-agent to ACM, linking its deployment blueprint (AddOnTemplate) with the targeting logic (Placement) that dictates which managed clusters will host the agent.
+### ClusterManagementAddOn: The central pillar for add-on registration. This hub-level resource formally introduces the argocd-agent to ACM, linking its deployment blueprint (AddOnTemplate) with the targeting logic (Placement) that dictates which managed clusters will host the agent.
 
-AddOnTemplate: Your agent's deployment manifest. This resource provides the precise instructions—the Kubernetes manifests—for installing and configuring the argocd-agent on each designated managed cluster. It also defines the use of the CustomSigner for automated, secure certificate management.
+### AddOnTemplate: Your agent's deployment manifest. This resource provides the precise instructions—the Kubernetes manifests—for installing and configuring the argocd-agent on each designated managed cluster. It also defines the use of the CustomSigner for automated, secure certificate management.
 
-Placement: The intelligent scheduler for your add-on. This resource specifies the rules and criteria (e.g., cluster labels, regions) for selecting the managed clusters where the argocd-agent will be deployed, ensuring it reaches the right destinations within your fleet.
+### Placement: The intelligent scheduler for your add-on. This resource specifies the rules and criteria (e.g., cluster labels, regions) for selecting the managed clusters where the argocd-agent will be deployed, ensuring it reaches the right destinations within your fleet.
 
-Setup
+## Setup
 Ready to get started? If you want to use Red Hat Advanced Cluster Management to bootstrap and manage your argocd-agent environment, follow the comprehensive guide provided in the official documentation to walk through the setup process.
