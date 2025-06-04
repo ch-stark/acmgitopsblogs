@@ -27,11 +27,11 @@ Customize the argocd-agent deployment to meet your specific needs using the ACM 
 Architecture
 The architecture for managing the argocd-agent with ACM is streamlined and declarative, relying on a few key Kubernetes-native resources on the hub cluster. The diagram below shows a simplified overview of this architecture with one managed cluster connected to the ACM hub.
 
-ClusterManagementAddOn: This resource registers the argocd-agent as a recognized add-on at the hub level. It ties together the template that defines the add-on with the placement rules that determine where it should be installed.
+ClusterManagementAddOn: The central pillar for add-on registration. This hub-level resource formally introduces the argocd-agent to ACM, linking its deployment blueprint (AddOnTemplate) with the targeting logic (Placement) that dictates which managed clusters will host the agent.
 
-AddOnTemplate: This resource is the blueprint for the argocd-agent add-on. It contains the Kubernetes manifests needed to install and configure the agent on each target cluster. It also specifies the CustomSigner registration type to automate the signing and management of client certificates.
+AddOnTemplate: Your agent's deployment manifest. This resource provides the precise instructions—the Kubernetes manifests—for installing and configuring the argocd-agent on each designated managed cluster. It also defines the use of the CustomSigner for automated, secure certificate management.
 
-Placement: This resource defines the scheduling rules for the add-on. By linking a Placement resource to the ClusterManagementAddOn, you instruct Red Hat ACM to install the argocd-agent on all managed clusters that match the specified rules (e.g., all clusters with the label env=production).
+Placement: The intelligent scheduler for your add-on. This resource specifies the rules and criteria (e.g., cluster labels, regions) for selecting the managed clusters where the argocd-agent will be deployed, ensuring it reaches the right destinations within your fleet.
 
 Setup
 Ready to get started? If you want to use Red Hat Advanced Cluster Management to bootstrap and manage your argocd-agent environment, follow the comprehensive guide provided in the official documentation to walk through the setup process.
