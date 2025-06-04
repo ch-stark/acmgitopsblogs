@@ -7,7 +7,7 @@ Benefits of Using the ACM argocd-agent Add-On
 Integrating the argocd-agent via the ACM add-on framework offers significant advantages for platform engineering and operations teams.
 
 🎯 Centralized Deployment
-With your managed clusters (spokes) registered to the ACM hub, you can deploy the argocd-agent across your entire landscape from a single, centralized point of control. Newly registered clusters can also be configured to automatically receive the argocd-agent, completely eliminating manual, cluster-by-cluster deployments and ensuring consistent tooling.
+With your managed clusters (or spokes) registered to the ACM hub, you can deploy the argocd-agent across your entire landscape from a single, centralized point of control. Newly registered spokes can also be configured to automatically receive the argocd-agent, completely eliminating manual, cluster-by-cluster deployments and ensuring consistent tooling.
 
 🚀 Advanced Placement and Rollout
 Leverage the sophisticated Placement API within Red Hat ACM to define precise and advanced strategies for deploying the argocd-agent. This allows for controlled rollouts, targeting specific cluster sets based on labels, regions, or other criteria, giving you granular control over your fleet.
@@ -19,10 +19,10 @@ Manage the complete lifecycle of all argocd-agent instances directly from the AC
 Gain a unified, real-time view into the health and operational status of every argocd-agent instance across your cluster fleet. ACM's console provides a single pane of glass to monitor connectivity and ensure your GitOps agents are running smoothly everywhere.
 
 🔒 Secure Communication
-Security is paramount. The ACM add-on framework can leverage a Custom Signer registration type to automatically sign and manage client certificates for the argocd-agent on managed clusters. This ensures all communication between the agent and the Argo CD server is secured with mTLS. The framework also handles automatic certificate rotation, preventing downtime and security lapses due to expired certificates.
+Security is paramount. The ACM add-on framework can leverage a CustomSigner registration type to automatically sign and manage client certificates for the argocd-agent on managed clusters. This ensures all communication between the agent and the Argo CD server is secured with mTLS. The framework also handles automatic certificate rotation, preventing downtime and security lapses due to expired certificates.
 
 ⚙️ Flexible Configuration
-Customize the argocd-agent deployment to meet your specific needs using the ACM AddOnTemplate. This powerful feature enables you to apply custom, template-based modifications to the agent's configuration and deployment manifests, ensuring it fits perfectly within your environment's requirements.
+Customize the argocd-agent deployment to meet your specific needs using the ACM AddOnTemplate. This powerful feature enables you to apply custom, template-based modifications to the agent's configuration and Kubernetes manifests, ensuring it fits perfectly within your environment's requirements.
 
 Architecture
 The architecture for managing the argocd-agent with ACM is streamlined and declarative, relying on a few key Kubernetes-native resources on the hub cluster. The diagram below shows a simplified overview of this architecture with one managed cluster connected to the ACM hub.
